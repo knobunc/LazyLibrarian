@@ -315,6 +315,38 @@ class GoodReads:
             }
         return author_dict
 
+    def get_book_pubdate(self, bookid, refresh=False):
+        URL = 'https://www.goodreads.com/book/show/' + bookid + '.xml?' + urlencode(self.params)
+        api_hits = 0
+        bookdate = "0000"
+        
+        try:
+            rootxml, in_cache = gr_xml_request(URL, useCache=not refresh)
+        except Exception as e:
+            logger.error("%s fetching author books: %s" % (type(e).__name__, str(e)))
+            return
+        if rootxml is None:
+            logger.debug("Error requesting author books")
+            return
+        if not in_cache:
+            api_hits += 1
+
+        resultxml = rootxml.getiterator('work')
+        loopCount = 1
+        while resultxml:
+            for work in resultxml:
+                try:
+                    if work.find('original_publication_year').text is None:
+                        bookdate = "0000"
+                    else:
+                        bookdate = work.find('original_publication_year').text
+                except (KeyError, AttributeError):
+                    bookdate = "0000"
+                resultxml = None
+                
+        logger.debug("GoodReads book %s pubdate [%s]" % (bookid, bookdate))
+        return bookdate, api_hits
+    
     @staticmethod
     def get_bookdict(book):
         """ Return all the book info we need as a dictionary or default value if no key """
@@ -420,7 +452,7 @@ class GoodReads:
                         find_field = "id"
                         bookisbn = ""
                         isbnhead = ""
-
+                       
                         bookdict = self.get_bookdict(book)
 
                         bookname = bookdict['name']
@@ -435,6 +467,13 @@ class GoodReads:
                         workid = bookdict['workid']
                         isbn13 = bookdict['isbn13']
                         isbn10 = bookdict['isbn10']
+
+                        # The author pages don't have the original publication dates
+                        if bookid:
+                            newpub, _api_hits = self.get_book_pubdate(bookid, refresh)
+                            api_hits += _api_hits
+                            if newpub:
+                                bookpub = newpub
 
                         if not bookname:
                             logger.debug('Rejecting bookid %s for %s, no bookname' %
